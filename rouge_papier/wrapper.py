@@ -9,7 +9,8 @@ AVG_RECALL_PATT = r"X ROUGE-{} Average_R: (.*?) \(95%-conf.int. .*? - .*?\)"
 
 def compute_rouge(config_path, show_all=True, max_ngram=4, lcs=False, 
                   stemmer=True, length=100, length_unit="word",
-                  number_of_samples=1000, scoring_formula="A"):
+                  number_of_samples=1000, scoring_formula="A",
+                  remove_stopwords=False):
     rouge_path = pkg_resources.resource_filename(
         'rouge_papier', os.path.join('data', 'ROUGE-1.5.5.pl'))
     rouge_data_path = pkg_resources.resource_filename(
@@ -30,6 +31,9 @@ def compute_rouge(config_path, show_all=True, max_ngram=4, lcs=False,
            
     if stemmer:
         args.append("-m")
+
+    if remove_stopwords:
+        args.append("-s")
 
     if length_unit == "word":
         args.extend(["-l", str(length)])
