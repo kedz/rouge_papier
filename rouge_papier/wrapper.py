@@ -5,12 +5,12 @@ import re
 import pandas as pd
 
 
-AVG_RECALL_PATT = r"X ROUGE-{} Average_R: (.*?) \(95%-conf.int. .*? - .*?\)"
+AVG_RECALL_PATT = r"X ROUGE-{} Average_R: (.*?) \(95%-conf.int. (.*?) - (.*?)\)"
 
 def compute_rouge(config_path, show_all=True, max_ngram=4, lcs=False, 
                   stemmer=True, length=100, length_unit="word",
                   number_of_samples=1000, scoring_formula="A",
-                  remove_stopwords=False):
+                  remove_stopwords=False, return_conf=False):
     rouge_path = pkg_resources.resource_filename(
         'rouge_papier', os.path.join('data', 'ROUGE-1.5.5.pl'))
     rouge_data_path = pkg_resources.resource_filename(
@@ -57,12 +57,22 @@ def compute_rouge(config_path, show_all=True, max_ngram=4, lcs=False,
 
     output = check_output(" ".join(args), shell=True).decode("utf8")
     dataframes = []
+    confs = []
     for r in range(1, max_ngram + 1):
-        dataframes.append(convert_output(output, r))
+        o, conf = convert_output(output, r)
+        dataframes.append(o)
+        confs.append(conf)
     if lcs:
-        dataframes.append(convert_output(output, "L"))
+        o, conf = convert_output(output, "L")
+        dataframes.append(o)
+        confs.append(conf)
+
     df = pd.concat(dataframes, axis=1)
-    return df
+    if return_conf:
+        conf = pd.concat(confs, axis=0)
+        return df, conf
+    else:
+        return df
 
 def convert_output(output, rouge=1):
     data = []
@@ -73,8 +83,13 @@ def convert_output(output, rouge=1):
         data.append((name, float(recall)))
     match = re.search(avg_recall_patt, output, flags=re.MULTILINE)
     avg_recall = float(match.groups()[0])
+    lower_conf = float(match.groups()[1])
+    upper_conf = float(match.groups()[2])
     data.append(("average", avg_recall))
 
     df = pd.DataFrame(data, columns=["name", "rouge-{}".format(rouge)])
     df.set_index("name", inplace=True)
-    return df
+    conf = pd.DataFrame([[lower_conf, upper_conf]], 
+                        columns=["95% conf. lb.", "95% conf. ub."])
+    conf.index = ["rouge-{}".format(rouge)]
+    return df, conf
