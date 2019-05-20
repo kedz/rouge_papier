@@ -8,11 +8,18 @@ from . import util
 
 
 def to_dataframe(hypotheses, references, ngrams=None, length=None, 
-                 length_unit="word"):
+                 length_unit="word", print_args=False, stem=False,
+                 print_output=False,
+                 rouge_w_weight=None):
 
     AVG_R_PATT = r"X ROUGE-{} Average_R: (.*?) \(95%-conf.int. (.*?) - (.*?)\)"
     AVG_P_PATT = r"X ROUGE-{} Average_P: (.*?) \(95%-conf.int. (.*?) - (.*?)\)"
     AVG_F_PATT = r"X ROUGE-{} Average_F: (.*?) \(95%-conf.int. (.*?) - (.*?)\)"
+
+    AVG_R_WPATT = r"X ROUGE-W-[\d\.]+ Average_R: (.*?) \(95%-conf.int. (.*?) - (.*?)\)"
+    AVG_P_WPATT = r"X ROUGE-W-[\d\.]+ Average_P: (.*?) \(95%-conf.int. (.*?) - (.*?)\)"
+    AVG_F_WPATT = r"X ROUGE-W-[\d\.]+ Average_F: (.*?) \(95%-conf.int. (.*?) - (.*?)\)"
+
 
     rouge_path = pkg_resources.resource_filename(
         'rouge_papier', os.path.join('data', 'ROUGE-1.5.5.pl'))
@@ -21,9 +28,9 @@ def to_dataframe(hypotheses, references, ngrams=None, length=None,
 
     #-n 4 -m -a -l 100 -x -c 95
     #-r 1000 -f A -p 0.5 -t 0
-    #args = ["perl", rouge_path, "-H"]
+ #   args = ["perl", rouge_path, "-H"]
 
-    #print(check_output(args).decode("utf8"))
+#    print(check_output(args).decode("utf8"))
 
     args = ["perl", rouge_path, "-e", rouge_data_path, "-a"]
 
@@ -39,7 +46,11 @@ def to_dataframe(hypotheses, references, ngrams=None, length=None,
             raise Exception(
                 ("length_unit must be either 'word' or 'byte' "
                  "but found {}").format(length_unit))
-
+    if stem:
+        args.append("-m")
+    
+    if rouge_w_weight is not None:
+        args.extend(["-w", str(rouge_w_weight)])
 
     with util.TempFileManager() as manager:
         input_paths = []
@@ -51,8 +62,12 @@ def to_dataframe(hypotheses, references, ngrams=None, length=None,
             util.make_simple_config_text(input_paths))
 
         try:
-            output = check_output(
-                args + ["-z", "SPL", config_path]).decode("utf8")
+            args += ["-z", "SPL", config_path]
+            if print_args:
+                print(args)
+            output = check_output(args).decode("utf8")
+            if print_output:
+                print(output)
 
         except CalledProcessError as e:
             print(e.output)
@@ -62,7 +77,6 @@ def to_dataframe(hypotheses, references, ngrams=None, length=None,
         cols = []
         data = []
         if ngrams is not None:
-            ngram_results = []
             for ngram in range(1, ngrams + 1):
                 avg_r = float(
                     re.findall(AVG_R_PATT.format(ngram), output)[0][0])
@@ -70,10 +84,30 @@ def to_dataframe(hypotheses, references, ngrams=None, length=None,
                     re.findall(AVG_P_PATT.format(ngram), output)[0][0])
                 avg_f = float(
                     re.findall(AVG_F_PATT.format(ngram), output)[0][0])
-                ngram_results.extend([avg_r, avg_p, avg_f])
-                cols.extend(["Precision", "Recall", "F-Score"])
-                groups.extend(["{}-gram".format(ngram)] * 3)
-            data.append(ngram_results)
-        return pd.DataFrame(data, index=["avg."],
+                data.extend([avg_r, avg_p, avg_f])
+                cols.extend(["Recall", "Precision", "F-Score"])
+                groups.extend(["ROUGE-{}".format(ngram)] * 3)
+                
+        avg_r = float(
+            re.findall(AVG_R_PATT.format("L"), output)[0][0])
+        avg_p = float(
+            re.findall(AVG_P_PATT.format("L"), output)[0][0])
+        avg_f = float(
+            re.findall(AVG_F_PATT.format("L"), output)[0][0])
+        data.extend([avg_r, avg_p, avg_f])
+        cols.extend(["Recall", "Precision", "F-Score"])
+        groups.extend(["ROUGE-L"] * 3)
+
+        if rouge_w_weight is not None: 
+            avg_r = float(
+                re.findall(AVG_R_WPATT, output)[0][0])
+            avg_p = float(
+                re.findall(AVG_P_WPATT, output)[0][0])
+            avg_f = float(
+                re.findall(AVG_F_WPATT, output)[0][0])
+            data.extend([avg_r, avg_p, avg_f])
+            cols.extend(["Recall", "Precision", "F-Score"])
+            groups.extend(["ROUGE-W"] * 3)
+
+        return pd.DataFrame([data], index=["avg."],
             columns=pd.MultiIndex.from_tuples(zip(groups,cols)))
-            
