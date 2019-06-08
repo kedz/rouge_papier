@@ -8,8 +8,9 @@ from . import util
 
 
 def to_dataframe(hypotheses, references, ngrams=None, length=None, 
-                 length_unit="word", print_args=False, stem=False,
-                 print_output=False,
+                 length_unit="word", stem=False, remove_stopwords=False,
+                 input_type="texts",
+                 print_output=False, print_args=False,
                  rouge_w_weight=None):
 
     AVG_R_PATT = r"X ROUGE-{} Average_R: (.*?) \(95%-conf.int. (.*?) - (.*?)\)"
@@ -48,6 +49,9 @@ def to_dataframe(hypotheses, references, ngrams=None, length=None,
                  "but found {}").format(length_unit))
     if stem:
         args.append("-m")
+
+    if remove_stopwords:
+        args.append("-s")
     
     if rouge_w_weight is not None:
         args.extend(["-w", str(rouge_w_weight)])
@@ -55,9 +59,14 @@ def to_dataframe(hypotheses, references, ngrams=None, length=None,
     with util.TempFileManager() as manager:
         input_paths = []
         for hyp, refs in zip(hypotheses, references):
-            hyp_path = manager.create_temp_file(hyp)
-            ref_paths = manager.create_temp_files(refs)
-            input_paths.append([hyp_path, ref_paths])
+            if input_type == "texts":
+                hyp_path = manager.create_temp_file(hyp)
+                ref_paths = manager.create_temp_files(refs)
+                input_paths.append([hyp_path, ref_paths])
+            elif input_type == "paths":
+                input_paths.append([str(hyp), [str(x) for x in refs]])
+            else:
+                raise ValueError("input_type must be 'texts' or 'paths'")
         config_path = manager.create_temp_file(
             util.make_simple_config_text(input_paths))
 
